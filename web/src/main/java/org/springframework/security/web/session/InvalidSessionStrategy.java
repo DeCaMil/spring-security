@@ -15,10 +15,10 @@
  */
 package org.springframework.security.web.session;
 
+import java.io.IOException;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
 
 /**
  * Determines the behaviour of the {@code SessionManagementFilter} when an invalid session

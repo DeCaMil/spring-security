@@ -30,6 +30,8 @@ import org.springframework.security.oauth2.client.registration.TestClientRegistr
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
+import org.springframework.security.oauth2.core.oidc.OidcScopes;
+import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -85,11 +87,6 @@ public class DefaultServerOAuth2AuthorizationRequestResolverTests {
 				"redirect_uri=/login/oauth2/code/registration-id");
 	}
 
-	private OAuth2AuthorizationRequest resolve(String path) {
-		ServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get(path));
-		return this.resolver.resolve(exchange).block();
-	}
-
 	@Test
 	public void resolveWhenForwardedHeadersClientRegistrationFoundThenWorks() {
 		when(this.clientRegistrationRepository.findByRegistrationId(any())).thenReturn(
@@ -122,5 +119,28 @@ public class DefaultServerOAuth2AuthorizationRequestResolverTests {
 				"redirect_uri=/login/oauth2/code/registration-id&" +
 				"code_challenge_method=S256&" +
 				"code_challenge=([a-zA-Z0-9\\-\\.\\_\\~]){43}");
+	}
+
+	@Test
+	public void resolveWhenAuthenticationRequestWithValidOidcClientThenResolves() {
+		when(this.clientRegistrationRepository.findByRegistrationId(any())).thenReturn(
+				Mono.just(TestClientRegistrations.clientRegistration()
+						.scope(OidcScopes.OPENID)
+						.build()));
+
+		OAuth2AuthorizationRequest request = resolve("/oauth2/authorization/registration-id");
+
+		assertThat((String) request.getAttribute(OidcParameterNames.NONCE)).matches("^([a-zA-Z0-9\\-\\.\\_\\~]){128}$");
+
+		assertThat(request.getAuthorizationRequestUri()).matches("https://example.com/login/oauth/authorize\\?" +
+				"response_type=code&client_id=client-id&" +
+				"scope=openid&state=.*?&" +
+				"redirect_uri=/login/oauth2/code/registration-id&" +
+				"nonce=([a-zA-Z0-9\\-\\.\\_\\~]){43}");
+	}
+
+	private OAuth2AuthorizationRequest resolve(String path) {
+		ServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get(path));
+		return this.resolver.resolve(exchange).block();
 	}
 }

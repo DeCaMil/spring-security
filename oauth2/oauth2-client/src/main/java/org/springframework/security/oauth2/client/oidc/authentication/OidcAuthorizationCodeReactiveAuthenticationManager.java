@@ -43,13 +43,17 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoderFactory;
 import org.springframework.util.Assert;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Map;
 
 /**
  * An implementation of an {@link org.springframework.security.authentication.AuthenticationProvider} for OAuth 2.0 Login,
  * which leverages the OAuth 2.0 Authorization Code Grant Flow.
- *
+ * <p>
  * This {@link org.springframework.security.authentication.AuthenticationProvider} is responsible for authenticating
  * an Authorization Code credential with the Authorization Server's Token Endpoint
  * and if valid, exchanging it for an Access Token credential.
@@ -61,6 +65,7 @@ import java.util.Map;
  * to complete the authentication.
  *
  * @author Rob Winch
+ * @author Mark Heckler
  * @since 5.1
  * @see OAuth2LoginAuthenticationToken
  * @see ReactiveOAuth2AccessTokenResponseClient
@@ -77,6 +82,7 @@ public class OidcAuthorizationCodeReactiveAuthenticationManager implements
 	private static final String INVALID_STATE_PARAMETER_ERROR_CODE = "invalid_state_parameter";
 	private static final String INVALID_REDIRECT_URI_PARAMETER_ERROR_CODE = "invalid_redirect_uri_parameter";
 	private static final String INVALID_ID_TOKEN_ERROR_CODE = "invalid_id_token";
+	private static final String INVALID_NONCE_ERROR_CODE = "invalid_nonce";
 
 	private final ReactiveOAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> accessTokenResponseClient;
 
@@ -170,7 +176,8 @@ public class OidcAuthorizationCodeReactiveAuthenticationManager implements
 		}
 
 		return createOidcToken(clientRegistration, accessTokenResponse)
-				.map(idToken ->  new OidcUserRequest(clientRegistration, accessToken, idToken, additionalParameters))
+				.doOnNext(idToken -> validateNonce(authorizationCodeAuthentication, idToken))
+				.map(idToken -> new OidcUserRequest(clientRegistration, accessToken, idToken, additionalParameters))
 				.flatMap(this.userService::loadUser)
 				.map(oauth2User -> {
 					Collection<? extends GrantedAuthority> mappedAuthorities =
@@ -191,5 +198,32 @@ public class OidcAuthorizationCodeReactiveAuthenticationManager implements
 		String rawIdToken = (String) accessTokenResponse.getAdditionalParameters().get(OidcParameterNames.ID_TOKEN);
 		return jwtDecoder.decode(rawIdToken)
 				.map(jwt -> new OidcIdToken(jwt.getTokenValue(), jwt.getIssuedAt(), jwt.getExpiresAt(), jwt.getClaims()));
+	}
+
+	private static Mono<OidcIdToken> validateNonce(OAuth2AuthorizationCodeAuthenticationToken authorizationCodeAuthentication, OidcIdToken idToken) {
+		String requestNonce = authorizationCodeAuthentication.getAuthorizationExchange()
+				.getAuthorizationRequest().getAttribute(OidcParameterNames.NONCE);
+		if (requestNonce != null) {
+			String nonceHash;
+			try {
+				nonceHash = createHash(requestNonce);
+			} catch (NoSuchAlgorithmException e) {
+				OAuth2Error oauth2Error = new OAuth2Error(INVALID_NONCE_ERROR_CODE);
+				throw new OAuth2AuthenticationException(oauth2Error, oauth2Error.toString());
+			}
+			String nonceHashClaim = idToken.getNonce();
+			if (nonceHashClaim == null || !nonceHashClaim.equals(nonceHash)) {
+				OAuth2Error oauth2Error = new OAuth2Error(INVALID_NONCE_ERROR_CODE);
+				throw new OAuth2AuthenticationException(oauth2Error, oauth2Error.toString());
+			}
+		}
+
+		return Mono.just(idToken);
+	}
+
+	static String createHash(String nonce) throws NoSuchAlgorithmException {
+		MessageDigest md = MessageDigest.getInstance("SHA-256");
+		byte[] digest = md.digest(nonce.getBytes(StandardCharsets.US_ASCII));
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
 	}
 }

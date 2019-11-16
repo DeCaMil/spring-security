@@ -17,7 +17,7 @@ package org.springframework.security.test.web.servlet.request;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -55,6 +55,7 @@ import org.springframework.security.test.web.support.WebTestUtils;
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 import org.springframework.security.web.context.SecurityContextPersistenceFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
@@ -63,6 +64,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.util.Assert;
 import org.springframework.util.DigestUtils;
 
+import static java.lang.Boolean.TRUE;
 import static org.springframework.security.oauth2.jwt.JwtClaimNames.SUB;
 
 /**
@@ -502,11 +504,11 @@ public final class SecurityMockMvcRequestPostProcessors {
 			}
 
 			public static void enable(HttpServletRequest request) {
-				request.setAttribute(ENABLED_ATTR_NAME, Boolean.TRUE);
+				request.setAttribute(ENABLED_ATTR_NAME, TRUE);
 			}
 
 			public boolean isEnabled(HttpServletRequest request) {
-				return Boolean.TRUE.equals(request.getAttribute(ENABLED_ATTR_NAME));
+				return TRUE.equals(request.getAttribute(ENABLED_ATTR_NAME));
 			}
 		}
 	}
@@ -638,12 +640,7 @@ public final class SecurityMockMvcRequestPostProcessors {
 		}
 
 		private static String md5Hex(String a2) {
-			try {
-				return DigestUtils.md5DigestAsHex(a2.getBytes("UTF-8"));
-			}
-			catch (UnsupportedEncodingException e) {
-				throw new RuntimeException(e);
-			}
+			return DigestUtils.md5DigestAsHex(a2.getBytes(StandardCharsets.UTF_8));
 		}
 	}
 
@@ -831,7 +828,7 @@ public final class SecurityMockMvcRequestPostProcessors {
 			implements RequestPostProcessor {
 		private final RequestPostProcessor delegate;
 
-		public UserDetailsRequestPostProcessor(UserDetails user) {
+		UserDetailsRequestPostProcessor(UserDetails user) {
 			Authentication token = new UsernamePasswordAuthenticationToken(user,
 					user.getPassword(), user.getAuthorities());
 
@@ -985,12 +982,7 @@ public final class SecurityMockMvcRequestPostProcessors {
 
 		private HttpBasicRequestPostProcessor(String username, String password) {
 			byte[] toEncode;
-			try {
-				toEncode = (username + ":" + password).getBytes("UTF-8");
-			}
-			catch (UnsupportedEncodingException e) {
-				throw new RuntimeException(e);
-			}
+			toEncode = (username + ":" + password).getBytes(StandardCharsets.UTF_8);
 			this.headerValue = "Basic " + new String(Base64.getEncoder().encode(toEncode));
 		}
 
@@ -1053,6 +1045,7 @@ public final class SecurityMockMvcRequestPostProcessors {
 
 		@Override
 		public MockHttpServletRequest postProcessRequest(MockHttpServletRequest request) {
+			CsrfFilter.skipRequest(request);
 			JwtAuthenticationToken token = new JwtAuthenticationToken(this.jwt, this.authorities);
 			return new AuthenticationRequestPostProcessor(token).postProcessRequest(request);
 		}

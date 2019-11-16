@@ -41,14 +41,14 @@ class AclClassIdUtils {
 
 	private ConversionService conversionService;
 
-	public AclClassIdUtils() {
+	AclClassIdUtils() {
 		GenericConversionService genericConversionService = new GenericConversionService();
 		genericConversionService.addConverter(String.class, Long.class, new StringToLongConverter());
 		genericConversionService.addConverter(String.class, UUID.class, new StringToUUIDConverter());
 		this.conversionService = genericConversionService;
 	}
 
-	public AclClassIdUtils(ConversionService conversionService) {
+	AclClassIdUtils(ConversionService conversionService) {
 		Assert.notNull(conversionService, "conversionService must not be null");
 		this.conversionService = conversionService;
 	}
@@ -74,7 +74,7 @@ class AclClassIdUtils {
 		return identifier;
 	}
 
-	private boolean hasValidClassIdType(ResultSet resultSet) throws SQLException {
+	private boolean hasValidClassIdType(ResultSet resultSet) {
 		boolean hasClassIdType = false;
 		try {
 			hasClassIdType = classIdTypeFrom(resultSet) != null;

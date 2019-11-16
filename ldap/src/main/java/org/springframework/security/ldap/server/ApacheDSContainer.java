@@ -153,7 +153,7 @@ public class ApacheDSContainer implements InitializingBean, DisposableBean, Life
 		start();
 	}
 
-	public void destroy() throws Exception {
+	public void destroy() {
 		stop();
 	}
 
@@ -184,6 +184,10 @@ public class ApacheDSContainer implements InitializingBean, DisposableBean, Life
 
 	public void setPort(int port) {
 		this.port = port;
+	}
+
+	public int getPort() {
+		return this.port;
 	}
 
 	/**

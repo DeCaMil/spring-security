@@ -67,9 +67,7 @@ public class SecurityMockServerConfigurers {
 	public static MockServerConfigurer springSecurity() {
 		return new MockServerConfigurer() {
 			public void beforeServerCreated(WebHttpHandlerBuilder builder) {
-				builder.filters( filters -> {
-					filters.add(0, new MutatorFilter());
-				});
+				builder.filters( filters -> filters.add(0, new MutatorFilter()));
 			}
 		};
 	}
@@ -421,6 +419,10 @@ public class SecurityMockServerConfigurers {
 				WebTestClient.Builder builder,
 				@Nullable WebHttpHandlerBuilder httpHandlerBuilder,
 				@Nullable ClientHttpConnector connector) {
+			httpHandlerBuilder.filter((exchange, chain) -> {
+				CsrfWebFilter.skipExchange(exchange);
+				return chain.filter(exchange);
+			});
 			configurer().afterConfigurerAdded(builder, httpHandlerBuilder, connector);
 		}
 

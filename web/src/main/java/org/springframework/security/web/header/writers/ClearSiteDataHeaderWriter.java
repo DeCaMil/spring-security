@@ -16,14 +16,12 @@
 
 package org.springframework.security.web.header.writers;
 
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
 import org.springframework.security.web.header.HeaderWriter;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.util.Assert;
@@ -63,13 +61,13 @@ public final class ClearSiteDataHeaderWriter implements HeaderWriter {
 	 * the request is secure as per the <b>Incomplete Clearing</b> section.
 	 * </p>
 	 *
-	 * @param sources (i.e. "cache", "cookies", "storage", "executionContexts" or "*")
+	 * @param directives (i.e. "cache", "cookies", "storage", "executionContexts" or "*")
 	 * @throws {@link IllegalArgumentException} if sources is null or empty.
 	 */
-	public ClearSiteDataHeaderWriter(String ...sources) {
-		Assert.notEmpty(sources, "sources cannot be empty or null");
+	public ClearSiteDataHeaderWriter(Directive... directives) {
+		Assert.notEmpty(directives, "directives cannot be empty or null");
 		this.requestMatcher = new SecureRequestMatcher();
-		this.headerValue = Stream.of(sources).map(this::quote).collect(Collectors.joining(", "));
+		this.headerValue = transformToHeaderValue(directives);
 	}
 
 	@Override
@@ -84,14 +82,40 @@ public final class ClearSiteDataHeaderWriter implements HeaderWriter {
 		}
 	}
 
+	/**
+	 * <p>Represents the directive values expected by the {@link ClearSiteDataHeaderWriter}</p>.
+	 */
+	public enum Directive {
+		CACHE("cache"),
+		COOKIES("cookies"),
+		STORAGE("storage"),
+		EXECUTION_CONTEXTS("executionContexts"),
+		ALL("*");
+
+		private final String headerValue;
+
+		Directive(String headerValue) {
+			this.headerValue = "\"" + headerValue + "\"";
+		}
+
+		public String getHeaderValue() {
+			return this.headerValue;
+		}
+	}
+
+	private String transformToHeaderValue(Directive... directives) {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < directives.length - 1; i++) {
+			sb.append(directives[i].headerValue).append(", ");
+		}
+		sb.append(directives[directives.length - 1].headerValue);
+		return sb.toString();
+	}
+
 	private static final class SecureRequestMatcher implements RequestMatcher {
 		public boolean matches(HttpServletRequest request) {
 			return request.isSecure();
 		}
-	}
-
-	private String quote(String source) {
-		return "\"" + source + "\"";
 	}
 
 	@Override

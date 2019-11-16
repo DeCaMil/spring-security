@@ -17,6 +17,7 @@ package sample;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import javax.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -29,11 +30,10 @@ import org.springframework.security.config.annotation.web.configuration.WebSecur
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
-import org.springframework.security.oauth2.server.resource.authentication.OAuth2IntrospectionAuthenticationProvider;
-import org.springframework.security.oauth2.server.resource.introspection.NimbusOAuth2TokenIntrospectionClient;
-import org.springframework.security.oauth2.server.resource.introspection.OAuth2TokenIntrospectionClient;
-
-import static org.springframework.security.web.authentication.MultiTenantAuthenticationManagerResolver.resolveFromPath;
+import org.springframework.security.oauth2.server.resource.authentication.JwtBearerTokenAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.OpaqueTokenAuthenticationProvider;
+import org.springframework.security.oauth2.server.resource.introspection.NimbusOpaqueTokenIntrospector;
+import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector;
 
 /**
  * @author Josh Cummings
@@ -41,22 +41,31 @@ import static org.springframework.security.web.authentication.MultiTenantAuthent
 @EnableWebSecurity
 public class OAuth2ResourceServerSecurityConfiguration extends WebSecurityConfigurerAdapter {
 
-	@Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
+	@Value("${tenantOne.jwk-set-uri}")
 	String jwkSetUri;
 
-	@Value("${spring.security.oauth2.resourceserver.opaque.introspection-uri}")
+	@Value("${tenantTwo.introspection-uri}")
 	String introspectionUri;
+
+	@Value("${tenantTwo.introspection-client-id}")
+	String introspectionClientId;
+
+	@Value("${tenantTwo.introspection-client-secret}")
+	String introspectionClientSecret;
 
 	@Override
 	protected void configure(HttpSecurity http) throws Exception {
 		// @formatter:off
 		http
-			.authorizeRequests()
-				.antMatchers("/**/message/**").hasAuthority("SCOPE_message:read")
-				.anyRequest().authenticated()
-				.and()
-			.oauth2ResourceServer()
-				.authenticationManagerResolver(multitenantAuthenticationManager());
+			.authorizeRequests(authorizeRequests ->
+				authorizeRequests
+					.antMatchers("/**/message/**").hasAuthority("SCOPE_message:read")
+					.anyRequest().authenticated()
+			)
+			.oauth2ResourceServer(oauth2ResourceServer ->
+				oauth2ResourceServer
+					.authenticationManagerResolver(multitenantAuthenticationManager())
+			);
 		// @formatter:on
 	}
 
@@ -65,17 +74,26 @@ public class OAuth2ResourceServerSecurityConfiguration extends WebSecurityConfig
 		Map<String, AuthenticationManager> authenticationManagers = new HashMap<>();
 		authenticationManagers.put("tenantOne", jwt());
 		authenticationManagers.put("tenantTwo", opaque());
-		return resolveFromPath(authenticationManagers::get);
+		return request -> {
+			String[] pathParts = request.getRequestURI().split("/");
+			String tenantId = pathParts.length > 0 ? pathParts[1] : null;
+			return Optional.ofNullable(tenantId)
+					.map(authenticationManagers::get)
+					.orElseThrow(() -> new IllegalArgumentException("unknown tenant"));
+		};
 	}
 
 	AuthenticationManager jwt() {
 		JwtDecoder jwtDecoder = NimbusJwtDecoder.withJwkSetUri(this.jwkSetUri).build();
-		return new JwtAuthenticationProvider(jwtDecoder)::authenticate;
+		JwtAuthenticationProvider authenticationProvider = new JwtAuthenticationProvider(jwtDecoder);
+		authenticationProvider.setJwtAuthenticationConverter(new JwtBearerTokenAuthenticationConverter());
+		return authenticationProvider::authenticate;
 	}
 
 	AuthenticationManager opaque() {
-		OAuth2TokenIntrospectionClient introspectionClient =
-				new NimbusOAuth2TokenIntrospectionClient(this.introspectionUri, "client", "secret");
-		return new OAuth2IntrospectionAuthenticationProvider(introspectionClient)::authenticate;
+		OpaqueTokenIntrospector introspectionClient =
+				new NimbusOpaqueTokenIntrospector(this.introspectionUri,
+						this.introspectionClientId, this.introspectionClientSecret);
+		return new OpaqueTokenAuthenticationProvider(introspectionClient)::authenticate;
 	}
 }

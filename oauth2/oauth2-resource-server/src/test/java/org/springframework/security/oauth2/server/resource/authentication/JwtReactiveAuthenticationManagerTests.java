@@ -21,6 +21,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
+import reactor.core.publisher.Mono;
+
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -29,16 +31,12 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.BearerTokenAuthenticationToken;
-import reactor.core.publisher.Mono;
-
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.oauth2.jwt.TestJwts.jwt;
 
 /**
  * @author Rob Winch
@@ -56,12 +54,7 @@ public class JwtReactiveAuthenticationManagerTests {
 	@Before
 	public void setup() {
 		this.manager = new JwtReactiveAuthenticationManager(this.jwtDecoder);
-
-		Map<String, Object> claims = new HashMap<>();
-		claims.put("scope", "message:read message:write");
-		Instant issuedAt = Instant.now();
-		Instant expiresAt = Instant.from(issuedAt).plusSeconds(3600);
-		this.jwt = new Jwt("jwt", issuedAt, expiresAt, claims, claims);
+		this.jwt = jwt().claim("scope", "message:read message:write").build();
 	}
 
 	@Test
@@ -93,6 +86,19 @@ public class JwtReactiveAuthenticationManagerTests {
 
 		assertThatCode(() -> this.manager.authenticate(token).block())
 				.isInstanceOf(OAuth2AuthenticationException.class);
+	}
+
+	// gh-7549
+	@Test
+	public void authenticateWhenDecoderThrowsIncompatibleErrorMessageThenWrapsWithGenericOne() {
+		BearerTokenAuthenticationToken token = new BearerTokenAuthenticationToken("token-1");
+		when(this.jwtDecoder.decode(token.getToken())).thenThrow(new JwtException("with \"invalid\" chars"));
+
+		assertThatCode(() -> this.manager.authenticate(token).block())
+				.isInstanceOf(OAuth2AuthenticationException.class)
+				.hasFieldOrPropertyWithValue(
+						"error.description",
+						"An error occurred while attempting to decode the Jwt: Invalid token");
 	}
 
 	@Test

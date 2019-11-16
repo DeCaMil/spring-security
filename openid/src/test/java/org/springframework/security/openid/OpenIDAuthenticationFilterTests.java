@@ -29,8 +29,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
 
 public class OpenIDAuthenticationFilterTests {
@@ -44,17 +42,13 @@ public class OpenIDAuthenticationFilterTests {
 	private static final String DEFAULT_TARGET_URL = FILTER_PROCESS_URL;
 
 	@Before
-	public void setUp() throws Exception {
+	public void setUp() {
 		filter = new OpenIDAuthenticationFilter();
 		filter.setConsumer(new MockOpenIDConsumer(REDIRECT_URL));
 		SavedRequestAwareAuthenticationSuccessHandler successHandler = new SavedRequestAwareAuthenticationSuccessHandler();
 		filter.setAuthenticationSuccessHandler(new SavedRequestAwareAuthenticationSuccessHandler());
 		successHandler.setDefaultTargetUrl(DEFAULT_TARGET_URL);
-		filter.setAuthenticationManager(new AuthenticationManager() {
-			public Authentication authenticate(Authentication a) {
-				return a;
-			}
-		});
+		filter.setAuthenticationManager(a -> a);
 		filter.afterPropertiesSet();
 	}
 
@@ -71,8 +65,7 @@ public class OpenIDAuthenticationFilterTests {
 
 		filter.setConsumer(new MockOpenIDConsumer() {
 			public String beginConsumption(HttpServletRequest req,
-					String claimedIdentity, String returnToUrl, String realm)
-					throws OpenIDConsumerException {
+					String claimedIdentity, String returnToUrl, String realm) {
 				assertThat(claimedIdentity).isEqualTo(CLAIMED_IDENTITY_URL);
 				assertThat(returnToUrl).isEqualTo(DEFAULT_TARGET_URL);
 				assertThat(realm).isEqualTo("http://localhost:8080/");

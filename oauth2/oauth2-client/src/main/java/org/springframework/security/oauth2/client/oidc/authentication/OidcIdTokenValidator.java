@@ -32,7 +32,6 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * An {@link OAuth2TokenValidator} responsible for
@@ -108,13 +107,6 @@ public final class OidcIdTokenValidator implements OAuth2TokenValidator<Jwt> {
 			invalidClaims.put(IdTokenClaimNames.IAT, idToken.getIssuedAt());
 		}
 
-		// 11. If a nonce value was sent in the Authentication Request,
-		// a nonce Claim MUST be present and its value checked to verify
-		// that it is the same value as the one that was sent in the Authentication Request.
-		// The Client SHOULD check the nonce value for replay attacks.
-		// The precise method for detecting replay attacks is Client specific.
-		// TODO Depends on gh-4442
-
 		if (!invalidClaims.isEmpty()) {
 			return OAuth2TokenValidatorResult.failure(invalidIdToken(invalidClaims));
 		}
@@ -130,18 +122,15 @@ public final class OidcIdTokenValidator implements OAuth2TokenValidator<Jwt> {
 	 * @since 5.2
 	 * @param clockSkew the maximum acceptable clock skew
 	 */
-	public final void setClockSkew(Duration clockSkew) {
+	public void setClockSkew(Duration clockSkew) {
 		Assert.notNull(clockSkew, "clockSkew cannot be null");
 		Assert.isTrue(clockSkew.getSeconds() >= 0, "clockSkew must be >= 0");
 		this.clockSkew = clockSkew;
 	}
 
 	private static OAuth2Error invalidIdToken(Map<String, Object> invalidClaims) {
-		String claimsDetail = invalidClaims.entrySet().stream()
-				.map(it -> it.getKey() + " (" + it.getValue() + ")")
-				.collect(Collectors.joining(", "));
 		return new OAuth2Error("invalid_id_token",
-				"The ID Token contains invalid claims: " + claimsDetail,
+				"The ID Token contains invalid claims: " + invalidClaims,
 				"https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation");
 	}
 

@@ -15,7 +15,6 @@
  */
 package org.springframework.security.config.annotation.web.configuration;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import javax.servlet.Filter;
@@ -109,11 +108,10 @@ public class WebSecurityConfiguration implements ImportAware, BeanClassLoaderAwa
 	 * Creates the {@link WebInvocationPrivilegeEvaluator} that is necessary for the JSP
 	 * tag support.
 	 * @return the {@link WebInvocationPrivilegeEvaluator}
-	 * @throws Exception
 	 */
 	@Bean
 	@DependsOn(AbstractSecurityWebApplicationInitializer.DEFAULT_FILTER_NAME)
-	public WebInvocationPrivilegeEvaluator privilegeEvaluator() throws Exception {
+	public WebInvocationPrivilegeEvaluator privilegeEvaluator() {
 		return webSecurity.getPrivilegeEvaluator();
 	}
 
@@ -139,7 +137,7 @@ public class WebSecurityConfiguration implements ImportAware, BeanClassLoaderAwa
 			webSecurity.debug(debugEnabled);
 		}
 
-		Collections.sort(webSecurityConfigurers, AnnotationAwareOrderComparator.INSTANCE);
+		webSecurityConfigurers.sort(AnnotationAwareOrderComparator.INSTANCE);
 
 		Integer previousOrder = null;
 		Object previousConfig = null;

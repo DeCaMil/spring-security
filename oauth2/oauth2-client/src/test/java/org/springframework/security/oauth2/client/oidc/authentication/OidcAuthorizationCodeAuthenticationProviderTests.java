@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import org.mockito.stubbing.Answer;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
+import org.springframework.security.crypto.keygen.Base64StringKeyGenerator;
+import org.springframework.security.crypto.keygen.StringKeyGenerator;
 import org.springframework.security.oauth2.client.authentication.OAuth2LoginAuthenticationToken;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
@@ -44,8 +46,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -58,15 +62,18 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.oauth2.client.oidc.authentication.OidcAuthorizationCodeAuthenticationProvider.createHash;
 import static org.springframework.security.oauth2.client.registration.TestClientRegistrations.clientRegistration;
 import static org.springframework.security.oauth2.core.endpoint.TestOAuth2AuthorizationRequests.request;
 import static org.springframework.security.oauth2.core.endpoint.TestOAuth2AuthorizationResponses.error;
 import static org.springframework.security.oauth2.core.endpoint.TestOAuth2AuthorizationResponses.success;
+import static org.springframework.security.oauth2.jwt.TestJwts.jwt;
 
 /**
  * Tests for {@link OidcAuthorizationCodeAuthenticationProvider}.
  *
  * @author Joe Grandja
+ * @author Mark Heckler
  */
 public class OidcAuthorizationCodeAuthenticationProviderTests {
 	private ClientRegistration clientRegistration;
@@ -77,6 +84,8 @@ public class OidcAuthorizationCodeAuthenticationProviderTests {
 	private OAuth2AccessTokenResponse accessTokenResponse;
 	private OAuth2UserService<OidcUserRequest, OidcUser> userService;
 	private OidcAuthorizationCodeAuthenticationProvider authenticationProvider;
+	private StringKeyGenerator secureKeyGenerator = new Base64StringKeyGenerator(Base64.getUrlEncoder().withoutPadding(), 96);
+	private String nonceHash;
 
 	@Rule
 	public ExpectedException exception = ExpectedException.none();
@@ -85,7 +94,19 @@ public class OidcAuthorizationCodeAuthenticationProviderTests {
 	@SuppressWarnings("unchecked")
 	public void setUp() {
 		this.clientRegistration = clientRegistration().clientId("client1").build();
-		this.authorizationRequest = request().scope("openid", "profile", "email").build();
+		Map<String, Object> attributes = new HashMap<>();
+		Map<String, Object> additionalParameters = new HashMap<>();
+		try {
+			String nonce = this.secureKeyGenerator.generateKey();
+			this.nonceHash = createHash(nonce);
+			attributes.put(OidcParameterNames.NONCE, nonce);
+			additionalParameters.put(OidcParameterNames.NONCE, this.nonceHash);
+		} catch (NoSuchAlgorithmException e) { }
+		this.authorizationRequest = request()
+				.scope("openid", "profile", "email")
+				.attributes(attributes)
+				.additionalParameters(additionalParameters)
+				.build();
 		this.authorizationResponse = success().build();
 		this.authorizationExchange = new OAuth2AuthorizationExchange(this.authorizationRequest, this.authorizationResponse);
 		this.accessTokenResponseClient = mock(OAuth2AccessTokenResponseClient.class);
@@ -218,12 +239,30 @@ public class OidcAuthorizationCodeAuthenticationProviderTests {
 	}
 
 	@Test
+	public void authenticateWhenIdTokenInvalidNonceThenThrowOAuth2AuthenticationException() {
+		this.exception.expect(OAuth2AuthenticationException.class);
+		this.exception.expectMessage(containsString("[invalid_nonce]"));
+
+		Map<String, Object> claims = new HashMap<>();
+		claims.put(IdTokenClaimNames.ISS, "https://provider.com");
+		claims.put(IdTokenClaimNames.SUB, "subject1");
+		claims.put(IdTokenClaimNames.AUD, Arrays.asList("client1", "client2"));
+		claims.put(IdTokenClaimNames.AZP, "client1");
+		claims.put(IdTokenClaimNames.NONCE, "invalid-nonce-hash");
+		this.setUpIdToken(claims);
+
+		this.authenticationProvider.authenticate(
+				new OAuth2LoginAuthenticationToken(this.clientRegistration, this.authorizationExchange));
+	}
+
+	@Test
 	public void authenticateWhenLoginSuccessThenReturnAuthentication() {
 		Map<String, Object> claims = new HashMap<>();
 		claims.put(IdTokenClaimNames.ISS, "https://provider.com");
 		claims.put(IdTokenClaimNames.SUB, "subject1");
 		claims.put(IdTokenClaimNames.AUD, Arrays.asList("client1", "client2"));
 		claims.put(IdTokenClaimNames.AZP, "client1");
+		claims.put(IdTokenClaimNames.NONCE, this.nonceHash);
 		this.setUpIdToken(claims);
 
 		OidcUser principal = mock(OidcUser.class);
@@ -253,6 +292,7 @@ public class OidcAuthorizationCodeAuthenticationProviderTests {
 		claims.put(IdTokenClaimNames.SUB, "subject1");
 		claims.put(IdTokenClaimNames.AUD, Arrays.asList("client1", "client2"));
 		claims.put(IdTokenClaimNames.AZP, "client1");
+		claims.put(IdTokenClaimNames.NONCE, this.nonceHash);
 		this.setUpIdToken(claims);
 
 		OidcUser principal = mock(OidcUser.class);
@@ -282,6 +322,7 @@ public class OidcAuthorizationCodeAuthenticationProviderTests {
 		claims.put(IdTokenClaimNames.SUB, "subject1");
 		claims.put(IdTokenClaimNames.AUD, Arrays.asList("client1", "client2"));
 		claims.put(IdTokenClaimNames.AZP, "client1");
+		claims.put(IdTokenClaimNames.NONCE, this.nonceHash);
 		this.setUpIdToken(claims);
 
 		OidcUser principal = mock(OidcUser.class);
@@ -299,17 +340,7 @@ public class OidcAuthorizationCodeAuthenticationProviderTests {
 	}
 
 	private void setUpIdToken(Map<String, Object> claims) {
-		Instant issuedAt = Instant.now();
-		Instant expiresAt = Instant.from(issuedAt).plusSeconds(3600);
-		this.setUpIdToken(claims, issuedAt, expiresAt);
-	}
-
-	private void setUpIdToken(Map<String, Object> claims, Instant issuedAt, Instant expiresAt) {
-		Map<String, Object> headers = new HashMap<>();
-		headers.put("alg", "RS256");
-
-		Jwt idToken = new Jwt("id-token", issuedAt, expiresAt, headers, claims);
-
+		Jwt idToken = jwt().claims(c -> c.putAll(claims)).build();
 		JwtDecoder jwtDecoder = mock(JwtDecoder.class);
 		when(jwtDecoder.decode(anyString())).thenReturn(idToken);
 		this.authenticationProvider.setJwtDecoderFactory(registration -> jwtDecoder);

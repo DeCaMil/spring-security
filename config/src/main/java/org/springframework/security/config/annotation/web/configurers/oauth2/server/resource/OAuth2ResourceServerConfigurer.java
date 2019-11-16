@@ -25,6 +25,7 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationManagerResolver;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.HttpSecurityBuilder;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
@@ -36,9 +37,9 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
-import org.springframework.security.oauth2.server.resource.authentication.OAuth2IntrospectionAuthenticationProvider;
-import org.springframework.security.oauth2.server.resource.introspection.NimbusOAuth2TokenIntrospectionClient;
-import org.springframework.security.oauth2.server.resource.introspection.OAuth2TokenIntrospectionClient;
+import org.springframework.security.oauth2.server.resource.authentication.OpaqueTokenAuthenticationProvider;
+import org.springframework.security.oauth2.server.resource.introspection.NimbusOpaqueTokenIntrospector;
+import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationFilter;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
@@ -65,11 +66,12 @@ import static org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withJwkSe
  * <li>{@link #accessDeniedHandler(AccessDeniedHandler)}</li> - customizes how access denied errors are handled
  * <li>{@link #authenticationEntryPoint(AuthenticationEntryPoint)}</li> - customizes how authentication failures are handled
  * <li>{@link #bearerTokenResolver(BearerTokenResolver)} - customizes how to resolve a bearer token from the request</li>
- * <li>{@link #jwt()} - enables Jwt-encoded bearer token support</li>
+ * <li>{@link #jwt(Customizer)} - enables Jwt-encoded bearer token support</li>
+ * <li>{@link #opaqueToken(Customizer)} - enables opaque bearer token support</li>
  * </ul>
  *
  * <p>
- * When using {@link #jwt()}, either
+ * When using {@link #jwt(Customizer)}, either
  *
  * <ul>
  * <li>
@@ -83,7 +85,7 @@ import static org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withJwkSe
  * </li>
  * </ul>
  *
- * Also with {@link #jwt()} consider
+ * Also with {@link #jwt(Customizer)} consider
  *
  * <ul>
  * <li>
@@ -93,12 +95,12 @@ import static org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withJwkSe
  * </ul>
  *
  * <p>
- * When using {@link #opaque()}, supply an introspection endpoint and its authentication configuration
+ * When using {@link #opaqueToken(Customizer)}, supply an introspection endpoint and its authentication configuration
  * </p>
  *
  * <h2>Security Filters</h2>
  *
- * The following {@code Filter}s are populated when {@link #jwt()} is configured:
+ * The following {@code Filter}s are populated when {@link #jwt(Customizer)} is configured:
  *
  * <ul>
  * <li>{@link BearerTokenAuthenticationFilter}</li>
@@ -180,6 +182,21 @@ public final class OAuth2ResourceServerConfigurer<H extends HttpSecurityBuilder<
 		return this.jwtConfigurer;
 	}
 
+	/**
+	 * Enables Jwt-encoded bearer token support.
+	 *
+	 * @param jwtCustomizer the {@link Customizer} to provide more options for
+	 * the {@link JwtConfigurer}
+	 * @return the {@link OAuth2ResourceServerConfigurer} for further customizations
+	 */
+	public OAuth2ResourceServerConfigurer<H> jwt(Customizer<JwtConfigurer> jwtCustomizer) {
+		if ( this.jwtConfigurer == null ) {
+			this.jwtConfigurer = new JwtConfigurer(this.context);
+		}
+		jwtCustomizer.customize(this.jwtConfigurer);
+		return this;
+	}
+
 	public OpaqueTokenConfigurer opaqueToken() {
 		if (this.opaqueTokenConfigurer == null) {
 			this.opaqueTokenConfigurer = new OpaqueTokenConfigurer(this.context);
@@ -188,31 +205,34 @@ public final class OAuth2ResourceServerConfigurer<H extends HttpSecurityBuilder<
 		return this.opaqueTokenConfigurer;
 	}
 
+	/**
+	 * Enables opaque bearer token support.
+	 *
+	 * @param opaqueTokenCustomizer the {@link Customizer} to provide more options for
+	 * the {@link OpaqueTokenConfigurer}
+	 * @return the {@link OAuth2ResourceServerConfigurer} for further customizations
+	 */
+	public OAuth2ResourceServerConfigurer<H> opaqueToken(Customizer<OpaqueTokenConfigurer> opaqueTokenCustomizer) {
+		if (this.opaqueTokenConfigurer == null) {
+			this.opaqueTokenConfigurer = new OpaqueTokenConfigurer(this.context);
+		}
+		opaqueTokenCustomizer.customize(this.opaqueTokenConfigurer);
+		return this;
+	}
+
 	@Override
-	public void init(H http) throws Exception {
+	public void init(H http) {
 		registerDefaultAccessDeniedHandler(http);
 		registerDefaultEntryPoint(http);
 		registerDefaultCsrfOverride(http);
 	}
 
 	@Override
-	public void configure(H http) throws Exception {
+	public void configure(H http) {
 		BearerTokenResolver bearerTokenResolver = getBearerTokenResolver();
 		this.requestMatcher.setBearerTokenResolver(bearerTokenResolver);
 
-		if (this.jwtConfigurer != null && this.opaqueTokenConfigurer != null) {
-			throw new IllegalStateException("Spring Security only supports JWTs or Opaque Tokens, not both at the " +
-					"same time");
-		}
-
-		if (this.jwtConfigurer == null && this.opaqueTokenConfigurer == null &&
-				this.authenticationManagerResolver == null ) {
-
-			throw new IllegalStateException("Jwt and Opaque Token are the only supported formats for bearer tokens " +
-					"in Spring Security and neither was found. Make sure to configure JWT " +
-					"via http.oauth2ResourceServer().jwt() or Opaque Tokens via " +
-					"http.oauth2ResourceServer().opaque().");
-		}
+		validateConfiguration();
 
 		AuthenticationManagerResolver resolver = this.authenticationManagerResolver;
 		if (resolver == null) {
@@ -226,6 +246,27 @@ public final class OAuth2ResourceServerConfigurer<H extends HttpSecurityBuilder<
 		filter = postProcess(filter);
 
 		http.addFilter(filter);
+	}
+
+	private void validateConfiguration() {
+		if (this.authenticationManagerResolver == null) {
+			if (this.jwtConfigurer == null && this.opaqueTokenConfigurer == null) {
+				throw new IllegalStateException("Jwt and Opaque Token are the only supported formats for bearer tokens " +
+						"in Spring Security and neither was found. Make sure to configure JWT " +
+						"via http.oauth2ResourceServer().jwt() or Opaque Tokens via " +
+						"http.oauth2ResourceServer().opaqueToken().");
+			}
+
+			if (this.jwtConfigurer != null && this.opaqueTokenConfigurer != null) {
+				throw new IllegalStateException("Spring Security only supports JWTs or Opaque Tokens, not both at the " +
+						"same time.");
+			}
+		} else {
+			if (this.jwtConfigurer != null || this.opaqueTokenConfigurer != null) {
+				throw new IllegalStateException("If an authenticationManagerResolver() is configured, then it takes " +
+						"precedence over any jwt() or opaqueToken() configuration.");
+			}
+		}
 	}
 
 	public class JwtConfigurer {
@@ -307,7 +348,7 @@ public final class OAuth2ResourceServerConfigurer<H extends HttpSecurityBuilder<
 		private String introspectionUri;
 		private String clientId;
 		private String clientSecret;
-		private Supplier<OAuth2TokenIntrospectionClient> introspectionClient;
+		private Supplier<OpaqueTokenIntrospector> introspector;
 
 		OpaqueTokenConfigurer(ApplicationContext context) {
 			this.context = context;
@@ -322,8 +363,8 @@ public final class OAuth2ResourceServerConfigurer<H extends HttpSecurityBuilder<
 		public OpaqueTokenConfigurer introspectionUri(String introspectionUri) {
 			Assert.notNull(introspectionUri, "introspectionUri cannot be null");
 			this.introspectionUri = introspectionUri;
-			this.introspectionClient = () ->
-					new NimbusOAuth2TokenIntrospectionClient(this.introspectionUri, this.clientId, this.clientSecret);
+			this.introspector = () ->
+					new NimbusOpaqueTokenIntrospector(this.introspectionUri, this.clientId, this.clientSecret);
 			return this;
 		}
 
@@ -332,22 +373,22 @@ public final class OAuth2ResourceServerConfigurer<H extends HttpSecurityBuilder<
 			Assert.notNull(clientSecret, "clientSecret cannot be null");
 			this.clientId = clientId;
 			this.clientSecret = clientSecret;
-			this.introspectionClient = () ->
-					new NimbusOAuth2TokenIntrospectionClient(this.introspectionUri, this.clientId, this.clientSecret);
+			this.introspector = () ->
+					new NimbusOpaqueTokenIntrospector(this.introspectionUri, this.clientId, this.clientSecret);
 			return this;
 		}
 
-		public OpaqueTokenConfigurer introspectionClient(OAuth2TokenIntrospectionClient introspectionClient) {
-			Assert.notNull(introspectionClient, "introspectionClient cannot be null");
-			this.introspectionClient = () -> introspectionClient;
+		public OpaqueTokenConfigurer introspector(OpaqueTokenIntrospector introspector) {
+			Assert.notNull(introspector, "introspector cannot be null");
+			this.introspector = () -> introspector;
 			return this;
 		}
 
-		OAuth2TokenIntrospectionClient getIntrospectionClient() {
-			if (this.introspectionClient != null) {
-				return this.introspectionClient.get();
+		OpaqueTokenIntrospector getIntrospector() {
+			if (this.introspector != null) {
+				return this.introspector.get();
 			}
-			return this.context.getBean(OAuth2TokenIntrospectionClient.class);
+			return this.context.getBean(OpaqueTokenIntrospector.class);
 		}
 
 		AuthenticationManager getAuthenticationManager(H http) {
@@ -355,9 +396,9 @@ public final class OAuth2ResourceServerConfigurer<H extends HttpSecurityBuilder<
 				return this.authenticationManager;
 			}
 
-			OAuth2TokenIntrospectionClient introspectionClient = getIntrospectionClient();
-			OAuth2IntrospectionAuthenticationProvider provider =
-					new OAuth2IntrospectionAuthenticationProvider(introspectionClient);
+			OpaqueTokenIntrospector introspector = getIntrospector();
+			OpaqueTokenAuthenticationProvider provider =
+					new OpaqueTokenAuthenticationProvider(introspector);
 			http.authenticationProvider(provider);
 
 			return http.getSharedObject(AuthenticationManager.class);

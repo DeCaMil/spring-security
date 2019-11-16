@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
  */
 package org.springframework.security.oauth2.client.userinfo;
 
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.mockwebserver.MockResponse;
@@ -26,25 +29,39 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.RequestEntity;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthenticationMethod;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2UserAuthority;
+import org.springframework.web.client.RestOperations;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.oauth2.client.registration.TestClientRegistrations.clientRegistration;
 import static org.springframework.security.oauth2.core.TestOAuth2AccessTokens.noScopes;
+import static org.springframework.security.oauth2.core.TestOAuth2AccessTokens.scopes;
 
 /**
  * Tests for {@link DefaultOAuth2UserService}.
  *
  * @author Joe Grandja
+ * @author Eddú Meléndez
  */
 public class DefaultOAuth2UserServiceTests {
 	private ClientRegistration.Builder clientRegistrationBuilder;
@@ -130,12 +147,12 @@ public class DefaultOAuth2UserServiceTests {
 
 		assertThat(user.getName()).isEqualTo("user1");
 		assertThat(user.getAttributes().size()).isEqualTo(6);
-		assertThat(user.getAttributes().get("user-name")).isEqualTo("user1");
-		assertThat(user.getAttributes().get("first-name")).isEqualTo("first");
-		assertThat(user.getAttributes().get("last-name")).isEqualTo("last");
-		assertThat(user.getAttributes().get("middle-name")).isEqualTo("middle");
-		assertThat(user.getAttributes().get("address")).isEqualTo("address");
-		assertThat(user.getAttributes().get("email")).isEqualTo("user1@example.com");
+		assertThat((String) user.getAttribute("user-name")).isEqualTo("user1");
+		assertThat((String) user.getAttribute("first-name")).isEqualTo("first");
+		assertThat((String) user.getAttribute("last-name")).isEqualTo("last");
+		assertThat((String) user.getAttribute("middle-name")).isEqualTo("middle");
+		assertThat((String) user.getAttribute("address")).isEqualTo("address");
+		assertThat((String) user.getAttribute("email")).isEqualTo("user1@example.com");
 
 		assertThat(user.getAuthorities().size()).isEqualTo(1);
 		assertThat(user.getAuthorities().iterator().next()).isInstanceOf(OAuth2UserAuthority.class);
@@ -323,6 +340,48 @@ public class DefaultOAuth2UserServiceTests {
 		assertThat(request.getHeader(HttpHeaders.ACCEPT)).isEqualTo(MediaType.APPLICATION_JSON_VALUE);
 		assertThat(request.getHeader(HttpHeaders.CONTENT_TYPE)).contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
 		assertThat(request.getBody().readUtf8()).isEqualTo("access_token=" + this.accessToken.getTokenValue());
+	}
+
+	@Test
+	public void loadUserWhenTokenContainsScopesThenIndividualScopeAuthorities() {
+		Map<String, Object> body = new HashMap<>();
+		body.put("id", "id");
+		DefaultOAuth2UserService userService = withMockResponse(body);
+		OAuth2UserRequest request = new OAuth2UserRequest(
+				clientRegistration().build(), scopes("message:read", "message:write"));
+		OAuth2User user = userService.loadUser(request);
+
+		assertThat(user.getAuthorities()).hasSize(3);
+		Iterator<? extends GrantedAuthority> authorities = user.getAuthorities().iterator();
+		assertThat(authorities.next()).isInstanceOf(OAuth2UserAuthority.class);
+		assertThat(authorities.next()).isEqualTo(new SimpleGrantedAuthority("SCOPE_message:read"));
+		assertThat(authorities.next()).isEqualTo(new SimpleGrantedAuthority("SCOPE_message:write"));
+	}
+
+	@Test
+	public void loadUserWhenTokenDoesNotContainScopesThenNoScopeAuthorities() {
+		Map<String, Object> body = new HashMap<>();
+		body.put("id", "id");
+		DefaultOAuth2UserService userService = withMockResponse(body);
+		OAuth2UserRequest request = new OAuth2UserRequest(
+				clientRegistration().build(), noScopes());
+		OAuth2User user = userService.loadUser(request);
+
+		assertThat(user.getAuthorities()).hasSize(1);
+		Iterator<? extends GrantedAuthority> authorities = user.getAuthorities().iterator();
+		assertThat(authorities.next()).isInstanceOf(OAuth2UserAuthority.class);
+	}
+
+	private DefaultOAuth2UserService withMockResponse(Map<String, Object> response) {
+		ResponseEntity<Map<String, Object>> responseEntity = new ResponseEntity<>(response, HttpStatus.OK);
+		Converter<OAuth2UserRequest, RequestEntity<?>> requestEntityConverter = mock(Converter.class);
+		RestOperations rest = mock(RestOperations.class);
+		when(rest.exchange(nullable(RequestEntity.class), any(ParameterizedTypeReference.class)))
+				.thenReturn(responseEntity);
+		DefaultOAuth2UserService userService = new DefaultOAuth2UserService();
+		userService.setRequestEntityConverter(requestEntityConverter);
+		userService.setRestOperations(rest);
+		return userService;
 	}
 
 	private MockResponse jsonResponse(String json) {

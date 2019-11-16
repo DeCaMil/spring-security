@@ -116,7 +116,7 @@ public class AuthorizationServerConfiguration extends AuthorizationServerConfigu
 	}
 
 	@Override
-	public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
+	public void configure(AuthorizationServerEndpointsConfigurer endpoints) {
 		// @formatter:off
 		endpoints
 			.authenticationManager(this.authenticationManager)
@@ -191,7 +191,7 @@ class UserConfig extends WebSecurityConfigurerAdapter {
 class IntrospectEndpoint {
 	TokenStore tokenStore;
 
-	public IntrospectEndpoint(TokenStore tokenStore) {
+	IntrospectEndpoint(TokenStore tokenStore) {
 		this.tokenStore = tokenStore;
 	}
 
@@ -226,7 +226,7 @@ class IntrospectEndpoint {
 class JwkSetEndpoint {
 	KeyPair keyPair;
 
-	public JwkSetEndpoint(KeyPair keyPair) {
+	JwkSetEndpoint(KeyPair keyPair) {
 		this.keyPair = keyPair;
 	}
 

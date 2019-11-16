@@ -18,7 +18,6 @@ package org.springframework.security.remoting.httpinvoker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashMap;
@@ -43,7 +42,7 @@ public class AuthenticationSimpleHttpInvokerRequestExecutorTests {
 	// ~ Methods
 	// ========================================================================================================
 	@After
-	public void tearDown() throws Exception {
+	public void tearDown() {
 		SecurityContextHolder.clearContext();
 	}
 
@@ -105,11 +104,11 @@ public class AuthenticationSimpleHttpInvokerRequestExecutorTests {
 
 		private Map<String, String> requestProperties = new HashMap<>();
 
-		public MockHttpURLConnection(URL u) {
+		MockHttpURLConnection(URL u) {
 			super(u);
 		}
 
-		public void connect() throws IOException {
+		public void connect() {
 			throw new UnsupportedOperationException("mock not implemented");
 		}
 

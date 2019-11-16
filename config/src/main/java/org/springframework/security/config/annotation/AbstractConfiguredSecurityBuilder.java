@@ -58,7 +58,7 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	private final LinkedHashMap<Class<? extends SecurityConfigurer<O, B>>, List<SecurityConfigurer<O, B>>> configurers = new LinkedHashMap<>();
 	private final List<SecurityConfigurer<O, B>> configurersAddedInInitializing = new ArrayList<>();
 
-	private final Map<Class<? extends Object>, Object> sharedObjects = new HashMap<>();
+	private final Map<Class<?>, Object> sharedObjects = new HashMap<>();
 
 	private final boolean allowConfigurersOfSameType;
 
@@ -174,7 +174,7 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	 * Gets the shared objects
 	 * @return the shared Objects
 	 */
-	public Map<Class<? extends Object>, Object> getSharedObjects() {
+	public Map<Class<?>, Object> getSharedObjects() {
 		return Collections.unmodifiableMap(this.sharedObjects);
 	}
 
@@ -183,10 +183,9 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	 * {@link SecurityConfigurer#init(SecurityBuilder)} immediately if necessary.
 	 *
 	 * @param configurer the {@link SecurityConfigurer} to add
-	 * @throws Exception if an error occurs
 	 */
 	@SuppressWarnings("unchecked")
-	private <C extends SecurityConfigurer<O, B>> void add(C configurer) throws Exception {
+	private <C extends SecurityConfigurer<O, B>> void add(C configurer) {
 		Assert.notNull(configurer, "configurer cannot be null");
 
 		Class<? extends SecurityConfigurer<O, B>> clazz = (Class<? extends SecurityConfigurer<O, B>>) configurer
@@ -409,7 +408,7 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	 * @author Rob Winch
 	 * @since 3.2
 	 */
-	private static enum BuildState {
+	private enum BuildState {
 		/**
 		 * This is the state before the {@link Builder#build()} is invoked
 		 */

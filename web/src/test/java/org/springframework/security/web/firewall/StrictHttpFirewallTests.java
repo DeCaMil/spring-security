@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2017 the original author or authors.
+ * Copyright 2012-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
  * @author Rob Winch
+ * @author Eddú Meléndez
  */
 public class StrictHttpFirewallTests {
 	public String[] unnormalizedPaths = { "/..", "/./path/", "/path/path/.", "/path/path//.", "./path/../path//.",
@@ -89,7 +90,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenRequestURINotNormalizedThenThrowsRequestRejectedException() throws Exception {
+	public void getFirewalledRequestWhenRequestURINotNormalizedThenThrowsRequestRejectedException() {
 		for (String path : this.unnormalizedPaths) {
 			this.request = new MockHttpServletRequest("GET", "");
 			this.request.setRequestURI(path);
@@ -102,7 +103,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenContextPathNotNormalizedThenThrowsRequestRejectedException() throws Exception {
+	public void getFirewalledRequestWhenContextPathNotNormalizedThenThrowsRequestRejectedException() {
 		for (String path : this.unnormalizedPaths) {
 			this.request = new MockHttpServletRequest("GET", "");
 			this.request.setContextPath(path);
@@ -115,7 +116,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenServletPathNotNormalizedThenThrowsRequestRejectedException() throws Exception {
+	public void getFirewalledRequestWhenServletPathNotNormalizedThenThrowsRequestRejectedException() {
 		for (String path : this.unnormalizedPaths) {
 			this.request = new MockHttpServletRequest("GET", "");
 			this.request.setServletPath(path);
@@ -128,7 +129,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenPathInfoNotNormalizedThenThrowsRequestRejectedException() throws Exception {
+	public void getFirewalledRequestWhenPathInfoNotNormalizedThenThrowsRequestRejectedException() {
 		for (String path : this.unnormalizedPaths) {
 			this.request = new MockHttpServletRequest("GET", "");
 			this.request.setPathInfo(path);
@@ -430,7 +431,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenAllowUrlLowerCaseEncodedDoubleSlashThenNoException() throws Exception {
+	public void getFirewalledRequestWhenAllowUrlLowerCaseEncodedDoubleSlashThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		this.firewall.setAllowUrlEncodedDoubleSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
@@ -442,7 +443,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenAllowUrlUpperCaseEncodedDoubleSlashThenNoException() throws Exception {
+	public void getFirewalledRequestWhenAllowUrlUpperCaseEncodedDoubleSlashThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		this.firewall.setAllowUrlEncodedDoubleSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
@@ -454,8 +455,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenAllowUrlLowerCaseAndUpperCaseEncodedDoubleSlashThenNoException()
-					throws Exception {
+	public void getFirewalledRequestWhenAllowUrlLowerCaseAndUpperCaseEncodedDoubleSlashThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		this.firewall.setAllowUrlEncodedDoubleSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
@@ -467,8 +467,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenAllowUrlUpperCaseAndLowerCaseEncodedDoubleSlashThenNoException()
-					throws Exception {
+	public void getFirewalledRequestWhenAllowUrlUpperCaseAndLowerCaseEncodedDoubleSlashThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		this.firewall.setAllowUrlEncodedDoubleSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
@@ -480,7 +479,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenRemoveFromUpperCaseEncodedUrlBlacklistThenNoException() throws Exception {
+	public void getFirewalledRequestWhenRemoveFromUpperCaseEncodedUrlBlacklistThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
 		request.setRequestURI("/context-root/a/b%2F%2Fc");
@@ -489,7 +488,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenRemoveFromLowerCaseEncodedUrlBlacklistThenNoException() throws Exception {
+	public void getFirewalledRequestWhenRemoveFromLowerCaseEncodedUrlBlacklistThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
 		request.setRequestURI("/context-root/a/b%2f%2fc");
@@ -498,8 +497,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenRemoveFromLowerCaseAndUpperCaseEncodedUrlBlacklistThenNoException()
-					throws Exception {
+	public void getFirewalledRequestWhenRemoveFromLowerCaseAndUpperCaseEncodedUrlBlacklistThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
 		request.setRequestURI("/context-root/a/b%2f%2Fc");
@@ -508,8 +506,7 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenRemoveFromUpperCaseAndLowerCaseEncodedUrlBlacklistThenNoException()
-					throws Exception {
+	public void getFirewalledRequestWhenRemoveFromUpperCaseAndLowerCaseEncodedUrlBlacklistThenNoException() {
 		this.firewall.setAllowUrlEncodedSlash(true);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
 		request.setRequestURI("/context-root/a/b%2F%2fc");
@@ -518,10 +515,26 @@ public class StrictHttpFirewallTests {
 	}
 
 	@Test
-	public void getFirewalledRequestWhenRemoveFromDecodedUrlBlacklistThenNoException() throws Exception {
+	public void getFirewalledRequestWhenRemoveFromDecodedUrlBlacklistThenNoException() {
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "");
 		request.setPathInfo("/a/b//c");
 		this.firewall.getDecodedUrlBlacklist().removeAll(Arrays.asList("//"));
 		assertThatCode(() -> this.firewall.getFirewalledRequest(request)).doesNotThrowAnyException();
+	}
+
+	@Test
+	public void getFirewalledRequestWhenTrustedDomainThenNoException() {
+		this.request.addHeader("Host", "example.org");
+		this.firewall.setAllowedHostnames(hostname -> hostname.equals("example.org"));
+
+		assertThatCode(() -> this.firewall.getFirewalledRequest(this.request)).doesNotThrowAnyException();
+	}
+
+	@Test(expected = RequestRejectedException.class)
+	public void getFirewalledRequestWhenUntrustedDomainThenException() {
+		this.request.addHeader("Host", "example.org");
+		this.firewall.setAllowedHostnames(hostname -> hostname.equals("myexample.org"));
+
+		this.firewall.getFirewalledRequest(this.request);
 	}
 }

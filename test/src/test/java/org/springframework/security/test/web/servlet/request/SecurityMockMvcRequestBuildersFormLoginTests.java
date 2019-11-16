@@ -31,12 +31,12 @@ public class SecurityMockMvcRequestBuildersFormLoginTests {
 	private MockServletContext servletContext;
 
 	@Before
-	public void setup() throws Exception {
+	public void setup() {
 		this.servletContext = new MockServletContext();
 	}
 
 	@Test
-	public void defaults() throws Exception {
+	public void defaults() {
 		MockHttpServletRequest request = formLogin().buildRequest(this.servletContext);
 		CsrfToken token = (CsrfToken) request
 				.getAttribute(CsrfRequestPostProcessor.TestCsrfTokenRepository.TOKEN_ATTR_NAME);
@@ -51,7 +51,7 @@ public class SecurityMockMvcRequestBuildersFormLoginTests {
 	}
 
 	@Test
-	public void custom() throws Exception {
+	public void custom() {
 		MockHttpServletRequest request = formLogin("/login").user("username", "admin")
 				.password("password", "secret").buildRequest(this.servletContext);
 
@@ -66,9 +66,25 @@ public class SecurityMockMvcRequestBuildersFormLoginTests {
 		assertThat(request.getRequestURI()).isEqualTo("/login");
 	}
 
+	@Test
+	public void customWithUriVars() {
+		MockHttpServletRequest request = formLogin().loginProcessingUrl("/uri-login/{var1}/{var2}", "val1", "val2")
+				.user("username", "admin").password("password", "secret").buildRequest(this.servletContext);
+
+		CsrfToken token = (CsrfToken) request
+				.getAttribute(CsrfRequestPostProcessor.TestCsrfTokenRepository.TOKEN_ATTR_NAME);
+
+		assertThat(request.getParameter("username")).isEqualTo("admin");
+		assertThat(request.getParameter("password")).isEqualTo("secret");
+		assertThat(request.getMethod()).isEqualTo("POST");
+		assertThat(request.getParameter(token.getParameterName()))
+				.isEqualTo(token.getToken());
+		assertThat(request.getRequestURI()).isEqualTo("/uri-login/val1/val2");
+	}
+
 	// gh-3920
 	@Test
-	public void usesAcceptMediaForContentNegotiation() throws Exception {
+	public void usesAcceptMediaForContentNegotiation() {
 		MockHttpServletRequest request = formLogin("/login").user("username", "admin")
 				.password("password", "secret").buildRequest(this.servletContext);
 

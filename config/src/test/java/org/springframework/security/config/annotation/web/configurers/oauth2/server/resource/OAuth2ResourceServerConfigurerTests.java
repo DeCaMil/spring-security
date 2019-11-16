@@ -65,6 +65,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationManagerResolver;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.HttpSecurityBuilder;
@@ -75,25 +76,23 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.config.test.SpringTestRule;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.oauth2.core.DefaultOAuth2AuthenticatedPrincipal;
 import org.springframework.security.oauth2.core.OAuth2Error;
-import org.springframework.security.oauth2.core.OAuth2TokenAttributes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
-import org.springframework.security.oauth2.jose.jws.JwsAlgorithms;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.security.oauth2.server.resource.authentication.OAuth2IntrospectionAuthenticationToken;
-import org.springframework.security.oauth2.server.resource.introspection.NimbusOAuth2TokenIntrospectionClient;
-import org.springframework.security.oauth2.server.resource.introspection.OAuth2TokenIntrospectionClient;
+import org.springframework.security.oauth2.server.resource.introspection.NimbusOpaqueTokenIntrospector;
+import org.springframework.security.oauth2.server.resource.introspection.OpaqueTokenIntrospector;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
@@ -108,7 +107,6 @@ import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -127,9 +125,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.oauth2.core.TestOAuth2AccessTokens.noScopes;
 import static org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withJwkSetUri;
 import static org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withPublicKey;
+import static org.springframework.security.oauth2.jwt.TestJwts.jwt;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -149,9 +149,8 @@ import static org.springframework.web.bind.annotation.RequestMethod.POST;
 public class OAuth2ResourceServerConfigurerTests {
 	private static final String JWT_TOKEN = "token";
 	private static final String JWT_SUBJECT = "mock-test-subject";
-	private static final Map<String, Object> JWT_HEADERS = Collections.singletonMap("alg", JwsAlgorithms.RS256);
 	private static final Map<String, Object> JWT_CLAIMS = Collections.singletonMap(JwtClaimNames.SUB, JWT_SUBJECT);
-	private static final Jwt JWT = new Jwt(JWT_TOKEN, Instant.MIN, Instant.MAX, JWT_HEADERS, JWT_CLAIMS);
+	private static final Jwt JWT = jwt().build();
 	private static final String JWK_SET_URI = "https://mock.org";
 	private static final JwtAuthenticationToken JWT_AUTHENTICATION_TOKEN =
 			new JwtAuthenticationToken(JWT, Collections.emptyList());
@@ -159,8 +158,9 @@ public class OAuth2ResourceServerConfigurerTests {
 	private static final String INTROSPECTION_URI = "https://idp.example.com";
 	private static final String CLIENT_ID = "client-id";
 	private static final String CLIENT_SECRET = "client-secret";
-	private static final OAuth2IntrospectionAuthenticationToken INTROSPECTION_AUTHENTICATION_TOKEN =
-			new OAuth2IntrospectionAuthenticationToken(noScopes(), new OAuth2TokenAttributes(JWT_CLAIMS), Collections.emptyList());
+	private static final BearerTokenAuthentication INTROSPECTION_AUTHENTICATION_TOKEN =
+			new BearerTokenAuthentication(new DefaultOAuth2AuthenticatedPrincipal(JWT_CLAIMS, Collections.emptyList()),
+					noScopes(), Collections.emptyList());
 
 	@Autowired(required = false)
 	MockMvc mvc;
@@ -185,6 +185,19 @@ public class OAuth2ResourceServerConfigurerTests {
 	}
 
 	@Test
+	public void getWhenUsingDefaultsInLambdaWithValidBearerTokenThenAcceptsRequest()
+			throws Exception {
+
+		this.spring.register(RestOperationsConfig.class, DefaultInLambdaConfig.class, BasicController.class).autowire();
+		mockRestOperations(jwks("Default"));
+		String token = this.token("ValidNoScopes");
+
+		this.mvc.perform(get("/").with(bearerToken(token)))
+				.andExpect(status().isOk())
+				.andExpect(content().string("ok"));
+	}
+
+	@Test
 	public void getWhenUsingJwkSetUriThenAcceptsRequest() throws Exception {
 		this.spring.register(WebServerConfig.class, JwkSetUriConfig.class, BasicController.class).autowire();
 		mockWebServer(jwks("Default"));
@@ -195,6 +208,16 @@ public class OAuth2ResourceServerConfigurerTests {
 				.andExpect(content().string("ok"));
 	}
 
+	@Test
+	public void getWhenUsingJwkSetUriInLambdaThenAcceptsRequest() throws Exception {
+		this.spring.register(WebServerConfig.class, JwkSetUriInLambdaConfig.class, BasicController.class).autowire();
+		mockWebServer(jwks("Default"));
+		String token = this.token("ValidNoScopes");
+
+		this.mvc.perform(get("/").with(bearerToken(token)))
+				.andExpect(status().isOk())
+				.andExpect(content().string("ok"));
+	}
 
 	@Test
 	public void getWhenUsingDefaultsWithExpiredBearerTokenThenInvalidToken()
@@ -359,7 +382,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/requires-read-scope")
 				.with(bearerToken(token)))
 				.andExpect(status().isOk())
-				.andExpect(content().string("SCOPE_message:read"));
+				.andExpect(content().string("[SCOPE_message:read]"));
 	}
 
 	@Test
@@ -373,7 +396,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/requires-read-scope")
 				.with(bearerToken(token)))
 				.andExpect(status().isForbidden())
-				.andExpect(insufficientScopeHeader(""));
+				.andExpect(insufficientScopeHeader());
 	}
 
 	@Test
@@ -387,7 +410,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/requires-read-scope")
 				.with(bearerToken(token)))
 				.andExpect(status().isForbidden())
-				.andExpect(insufficientScopeHeader("message:write"));
+				.andExpect(insufficientScopeHeader());
 	}
 
 	@Test
@@ -445,7 +468,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/ms-requires-read-scope")
 				.with(bearerToken(token)))
 				.andExpect(status().isOk())
-				.andExpect(content().string("SCOPE_message:read"));
+				.andExpect(content().string("[SCOPE_message:read]"));
 	}
 
 	@Test
@@ -459,7 +482,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/ms-requires-read-scope")
 				.with(bearerToken(token)))
 				.andExpect(status().isOk())
-				.andExpect(content().string("SCOPE_message:read"));
+				.andExpect(content().string("[SCOPE_message:read]"));
 	}
 
 	@Test
@@ -473,7 +496,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/ms-requires-read-scope")
 				.with(bearerToken(token)))
 				.andExpect(status().isForbidden())
-				.andExpect(insufficientScopeHeader(""));
+				.andExpect(insufficientScopeHeader());
 
 	}
 
@@ -488,7 +511,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/ms-requires-read-scope")
 				.with(bearerToken(token)))
 				.andExpect(status().isForbidden())
-				.andExpect(insufficientScopeHeader("message:write"));
+				.andExpect(insufficientScopeHeader());
 	}
 
 	@Test
@@ -502,7 +525,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.mvc.perform(get("/ms-deny")
 				.with(bearerToken(token)))
 				.andExpect(status().isForbidden())
-				.andExpect(insufficientScopeHeader("message:read"));
+				.andExpect(insufficientScopeHeader());
 	}
 
 	// -- Resource Server should not engage csrf
@@ -746,6 +769,23 @@ public class OAuth2ResourceServerConfigurerTests {
 		this.spring.register(CustomJwtDecoderOnDsl.class, BasicController.class).autowire();
 
 		CustomJwtDecoderOnDsl config = this.spring.getContext().getBean(CustomJwtDecoderOnDsl.class);
+		JwtDecoder decoder = config.decoder();
+
+		when(decoder.decode(anyString())).thenReturn(JWT);
+
+		this.mvc.perform(get("/authenticated")
+				.with(bearerToken(JWT_TOKEN)))
+				.andExpect(status().isOk())
+				.andExpect(content().string(JWT_SUBJECT));
+	}
+
+	@Test
+	public void requestWhenCustomJwtDecoderInLambdaOnDslThenUsed()
+			throws Exception {
+
+		this.spring.register(CustomJwtDecoderInLambdaOnDsl.class, BasicController.class).autowire();
+
+		CustomJwtDecoderInLambdaOnDsl config = this.spring.getContext().getBean(CustomJwtDecoderInLambdaOnDsl.class);
 		JwtDecoder decoder = config.decoder();
 
 		when(decoder.decode(anyString())).thenReturn(JWT);
@@ -1068,6 +1108,17 @@ public class OAuth2ResourceServerConfigurerTests {
 	}
 
 	@Test
+	public void getWhenOpaqueTokenInLambdaAndIntrospectingThenOk() throws Exception {
+		this.spring.register(RestOperationsConfig.class, OpaqueTokenInLambdaConfig.class, BasicController.class).autowire();
+		mockRestOperations(json("Active"));
+
+		this.mvc.perform(get("/authenticated")
+				.with(bearerToken("token")))
+				.andExpect(status().isOk())
+				.andExpect(content().string("test-subject"));
+	}
+
+	@Test
 	public void getWhenIntrospectionFailsThenUnauthorized() throws Exception {
 		this.spring.register(RestOperationsConfig.class, OpaqueTokenConfig.class).autowire();
 		mockRestOperations(json("Inactive"));
@@ -1105,7 +1156,21 @@ public class OAuth2ResourceServerConfigurerTests {
 	}
 
 	@Test
-	public void configureWhenOnlyIntrospectionUrlThenException() throws Exception {
+	public void getWhenCustomIntrospectionAuthenticationManagerInLambdaThenUsed() throws Exception {
+		this.spring.register(OpaqueTokenAuthenticationManagerInLambdaConfig.class, BasicController.class).autowire();
+
+		when(bean(AuthenticationProvider.class).authenticate(any(Authentication.class)))
+				.thenReturn(INTROSPECTION_AUTHENTICATION_TOKEN);
+		this.mvc.perform(get("/authenticated")
+				.with(bearerToken("token")))
+				.andExpect(status().isOk())
+				.andExpect(content().string("mock-test-subject"));
+
+		verifyBean(AuthenticationProvider.class).authenticate(any(Authentication.class));
+	}
+
+	@Test
+	public void configureWhenOnlyIntrospectionUrlThenException() {
 		assertThatCode(() -> this.spring.register(OpaqueTokenHalfConfiguredConfig.class).autowire())
 				.isInstanceOf(BeanCreationException.class);
 	}
@@ -1117,38 +1182,38 @@ public class OAuth2ResourceServerConfigurerTests {
 		OAuth2ResourceServerConfigurer.OpaqueTokenConfigurer opaqueTokenConfigurer =
 				new OAuth2ResourceServerConfigurer(context).opaqueToken();
 
-		OAuth2TokenIntrospectionClient client = mock(OAuth2TokenIntrospectionClient.class);
+		OpaqueTokenIntrospector client = mock(OpaqueTokenIntrospector.class);
 
 		opaqueTokenConfigurer.introspectionUri(INTROSPECTION_URI);
 		opaqueTokenConfigurer.introspectionClientCredentials(CLIENT_ID, CLIENT_SECRET);
-		opaqueTokenConfigurer.introspectionClient(client);
+		opaqueTokenConfigurer.introspector(client);
 
-		assertThat(opaqueTokenConfigurer.getIntrospectionClient()).isEqualTo(client);
+		assertThat(opaqueTokenConfigurer.getIntrospector()).isEqualTo(client);
 
 		opaqueTokenConfigurer =
 				new OAuth2ResourceServerConfigurer(context).opaqueToken();
 
-		opaqueTokenConfigurer.introspectionClient(client);
+		opaqueTokenConfigurer.introspector(client);
 		opaqueTokenConfigurer.introspectionUri(INTROSPECTION_URI);
 		opaqueTokenConfigurer.introspectionClientCredentials(CLIENT_ID, CLIENT_SECRET);
 
-		assertThat(opaqueTokenConfigurer.getIntrospectionClient())
-				.isInstanceOf(NimbusOAuth2TokenIntrospectionClient.class);
+		assertThat(opaqueTokenConfigurer.getIntrospector())
+				.isInstanceOf(NimbusOpaqueTokenIntrospector.class);
 
 	}
 
 	@Test
 	public void getIntrospectionClientWhenDslAndBeanWiredThenDslTakesPrecedence() {
 		GenericApplicationContext context = new GenericApplicationContext();
-		registerMockBean(context, "introspectionClientOne", OAuth2TokenIntrospectionClient.class);
-		registerMockBean(context, "introspectionClientTwo", OAuth2TokenIntrospectionClient.class);
+		registerMockBean(context, "introspectionClientOne", OpaqueTokenIntrospector.class);
+		registerMockBean(context, "introspectionClientTwo", OpaqueTokenIntrospector.class);
 
 		OAuth2ResourceServerConfigurer.OpaqueTokenConfigurer opaqueToken =
 				new OAuth2ResourceServerConfigurer(context).opaqueToken();
 		opaqueToken.introspectionUri(INTROSPECTION_URI);
 		opaqueToken.introspectionClientCredentials(CLIENT_ID, CLIENT_SECRET);
 
-		assertThat(opaqueToken.getIntrospectionClient()).isNotNull();
+		assertThat(opaqueToken.getIntrospector()).isNotNull();
 	}
 
 	// -- In combination with other authentication providers
@@ -1262,7 +1327,7 @@ public class OAuth2ResourceServerConfigurerTests {
 		oauth2ResourceServer
 			.opaqueToken()
 				.authenticationManager(authenticationManager)
-				.introspectionClient(mock(OAuth2TokenIntrospectionClient.class));
+				.introspector(mock(OpaqueTokenIntrospector.class));
 		assertThat(oauth2ResourceServer.getAuthenticationManager(http)).isSameAs(authenticationManager);
 		verify(http, never()).authenticationProvider(any(AuthenticationProvider.class));
 	}
@@ -1292,6 +1357,13 @@ public class OAuth2ResourceServerConfigurerTests {
 				.hasMessageContaining("Spring Security only supports JWTs or Opaque Tokens");
 	}
 
+	@Test
+	public void configureWhenUsingBothAuthenticationManagerResolverAndOpaqueThenWiringException() {
+		assertThatCode(() -> this.spring.register(AuthenticationManagerResolverPlusOtherConfig.class).autowire())
+				.isInstanceOf(BeanCreationException.class)
+				.hasMessageContaining("authenticationManagerResolver");
+	}
+
 	// -- support
 
 	@EnableWebSecurity
@@ -1312,6 +1384,26 @@ public class OAuth2ResourceServerConfigurerTests {
 	}
 
 	@EnableWebSecurity
+	static class DefaultInLambdaConfig extends WebSecurityConfigurerAdapter {
+
+		@Override
+		protected void configure(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.authorizeRequests(authorizeRequests ->
+					authorizeRequests
+						.antMatchers("/requires-read-scope").access("hasAuthority('SCOPE_message:read')")
+						.anyRequest().authenticated()
+				)
+				.oauth2ResourceServer(oauth2ResourceServer ->
+					oauth2ResourceServer
+						.jwt(withDefaults())
+				);
+			// @formatter:on
+		}
+	}
+
+	@EnableWebSecurity
 	static class JwkSetUriConfig extends WebSecurityConfigurerAdapter {
 		@Value("${mockwebserver.url:https://example.org}")
 		String jwkSetUri;
@@ -1327,6 +1419,31 @@ public class OAuth2ResourceServerConfigurerTests {
 				.oauth2ResourceServer()
 					.jwt()
 						.jwkSetUri(this.jwkSetUri);
+			// @formatter:on
+		}
+	}
+
+	@EnableWebSecurity
+	static class JwkSetUriInLambdaConfig extends WebSecurityConfigurerAdapter {
+		@Value("${mockwebserver.url:https://example.org}")
+		String jwkSetUri;
+
+		@Override
+		protected void configure(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.authorizeRequests(authorizeRequests ->
+					authorizeRequests
+						.antMatchers("/requires-read-scope").access("hasAuthority('SCOPE_message:read')")
+						.anyRequest().authenticated()
+				)
+				.oauth2ResourceServer(oauth2ResourceServer ->
+					oauth2ResourceServer
+						.jwt(jwt ->
+							jwt
+								.jwkSetUri(this.jwkSetUri)
+						)
+				);
 			// @formatter:on
 		}
 	}
@@ -1678,6 +1795,33 @@ public class OAuth2ResourceServerConfigurerTests {
 	}
 
 	@EnableWebSecurity
+	static class CustomJwtDecoderInLambdaOnDsl extends WebSecurityConfigurerAdapter {
+		JwtDecoder decoder = mock(JwtDecoder.class);
+
+		@Override
+		protected void configure(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.authorizeRequests(authorizeRequests ->
+					authorizeRequests
+						.anyRequest().authenticated()
+				)
+				.oauth2ResourceServer(oauth2ResourceServer ->
+					oauth2ResourceServer
+						.jwt(jwt ->
+							jwt
+								.decoder(decoder())
+						)
+				);
+			// @formatter:on
+		}
+
+		JwtDecoder decoder() {
+			return this.decoder;
+		}
+	}
+
+	@EnableWebSecurity
 	static class CustomJwtDecoderAsBean extends WebSecurityConfigurerAdapter {
 		@Override
 		protected void configure(HttpSecurity http) throws Exception {
@@ -1832,6 +1976,25 @@ public class OAuth2ResourceServerConfigurerTests {
 	}
 
 	@EnableWebSecurity
+	static class OpaqueTokenInLambdaConfig extends WebSecurityConfigurerAdapter {
+		@Override
+		protected void configure(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.authorizeRequests(authorizeRequests ->
+					authorizeRequests
+						.antMatchers("/requires-read-scope").hasAuthority("SCOPE_message:read")
+						.anyRequest().authenticated()
+				)
+				.oauth2ResourceServer(oauth2ResourceServer ->
+					oauth2ResourceServer
+						.opaqueToken(withDefaults())
+				);
+			// @formatter:on
+		}
+	}
+
+	@EnableWebSecurity
 	static class OpaqueTokenAuthenticationManagerConfig extends WebSecurityConfigurerAdapter {
 		@Override
 		protected void configure(HttpSecurity http) throws Exception {
@@ -1843,6 +2006,32 @@ public class OAuth2ResourceServerConfigurerTests {
 				.oauth2ResourceServer()
 					.opaqueToken()
 						.authenticationManager(authenticationProvider()::authenticate);
+			// @formatter:on
+		}
+
+		@Bean
+		public AuthenticationProvider authenticationProvider() {
+			return mock(AuthenticationProvider.class);
+		}
+	}
+
+	@EnableWebSecurity
+	static class OpaqueTokenAuthenticationManagerInLambdaConfig extends WebSecurityConfigurerAdapter {
+		@Override
+		protected void configure(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.authorizeRequests(authorizeRequests ->
+					authorizeRequests
+						.anyRequest().authenticated()
+				)
+				.oauth2ResourceServer(oauth2ResourceServer ->
+					oauth2ResourceServer
+						.opaqueToken(opaqueToken ->
+							opaqueToken
+								.authenticationManager(authenticationProvider()::authenticate)
+						)
+				);
 			// @formatter:on
 		}
 
@@ -1881,6 +2070,21 @@ public class OAuth2ResourceServerConfigurerTests {
 		}
 	}
 
+	@EnableWebSecurity
+	static class AuthenticationManagerResolverPlusOtherConfig extends WebSecurityConfigurerAdapter {
+		@Override
+		protected void configure(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.authorizeRequests()
+					.anyRequest().authenticated()
+					.and()
+				.oauth2ResourceServer()
+					.authenticationManagerResolver(mock(AuthenticationManagerResolver.class))
+					.opaqueToken();
+		}
+	}
+
 	@Configuration
 	static class JwtDecoderConfig {
 		@Bean
@@ -1902,21 +2106,20 @@ public class OAuth2ResourceServerConfigurerTests {
 		}
 
 		@RequestMapping(value = "/authenticated", method = { GET, POST })
-		public String authenticated(@AuthenticationPrincipal Authentication authentication) {
+		public String authenticated(Authentication authentication) {
 			return authentication.getName();
 		}
 
 		@GetMapping("/requires-read-scope")
-		public String requiresReadScope(@AuthenticationPrincipal JwtAuthenticationToken token) {
+		public String requiresReadScope(JwtAuthenticationToken token) {
 			return token.getAuthorities().stream()
 					.map(GrantedAuthority::getAuthority)
-					.filter(auth -> auth.endsWith("message:read"))
-					.findFirst().orElse(null);
+					.collect(Collectors.toList()).toString();
 		}
 
 		@GetMapping("/ms-requires-read-scope")
 		@PreAuthorize("hasAuthority('SCOPE_message:read')")
-		public String msRequiresReadScope(@AuthenticationPrincipal JwtAuthenticationToken token) {
+		public String msRequiresReadScope(JwtAuthenticationToken token) {
 			return requiresReadScope(token);
 		}
 
@@ -1951,7 +2154,7 @@ public class OAuth2ResourceServerConfigurerTests {
 
 		private class MockWebServerPropertySource extends PropertySource {
 
-			public MockWebServerPropertySource() {
+			MockWebServerPropertySource() {
 				super("mockwebserver");
 			}
 
@@ -1982,8 +2185,8 @@ public class OAuth2ResourceServerConfigurerTests {
 		}
 
 		@Bean
-		NimbusOAuth2TokenIntrospectionClient tokenIntrospectionClient() {
-			return new NimbusOAuth2TokenIntrospectionClient("https://example.org/introspect", this.rest);
+		NimbusOpaqueTokenIntrospector tokenIntrospectionClient() {
+			return new NimbusOpaqueTokenIntrospector("https://example.org/introspect", this.rest);
 		}
 	}
 
@@ -1996,7 +2199,7 @@ public class OAuth2ResourceServerConfigurerTests {
 
 		private String token;
 
-		public BearerTokenRequestPostProcessor(String token) {
+		BearerTokenRequestPostProcessor(String token) {
 			this.token = token;
 		}
 
@@ -2047,12 +2250,11 @@ public class OAuth2ResourceServerConfigurerTests {
 		);
 	}
 
-	private static ResultMatcher insufficientScopeHeader(String scope) {
+	private static ResultMatcher insufficientScopeHeader() {
 		return header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer " +
 				"error=\"insufficient_scope\"" +
-				", error_description=\"The token provided has insufficient scope [" + scope + "] for this request\"" +
-				", error_uri=\"https://tools.ietf.org/html/rfc6750#section-3.1\"" +
-				(StringUtils.hasText(scope) ? ", scope=\"" + scope + "\"" : ""));
+				", error_description=\"The request requires higher privileges than provided by the access token.\"" +
+				", error_uri=\"https://tools.ietf.org/html/rfc6750#section-3.1\"");
 	}
 
 	private void mockWebServer(String response) {

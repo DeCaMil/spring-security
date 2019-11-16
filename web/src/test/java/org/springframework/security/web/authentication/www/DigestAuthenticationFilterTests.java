@@ -38,7 +38,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.core.userdetails.cache.NullUserCache;
 import org.springframework.util.StringUtils;
 
@@ -131,14 +130,8 @@ public class DigestAuthenticationFilterTests {
 		SecurityContextHolder.clearContext();
 
 		// Create User Details Service
-		UserDetailsService uds = new UserDetailsService() {
-
-			public UserDetails loadUserByUsername(String username)
-					throws UsernameNotFoundException {
-				return new User("rod,ok", "koala",
-						AuthorityUtils.createAuthorityList("ROLE_ONE", "ROLE_TWO"));
-			}
-		};
+		UserDetailsService uds = username -> new User("rod,ok", "koala",
+				AuthorityUtils.createAuthorityList("ROLE_ONE", "ROLE_TWO"));
 
 		DigestAuthenticationEntryPoint ep = new DigestAuthenticationEntryPoint();
 		ep.setRealmName(REALM);
@@ -379,14 +372,14 @@ public class DigestAuthenticationFilterTests {
 	}
 
 	@Test(expected = IllegalArgumentException.class)
-	public void startupDetectsMissingAuthenticationEntryPoint() throws Exception {
+	public void startupDetectsMissingAuthenticationEntryPoint() {
 		DigestAuthenticationFilter filter = new DigestAuthenticationFilter();
 		filter.setUserDetailsService(mock(UserDetailsService.class));
 		filter.afterPropertiesSet();
 	}
 
 	@Test(expected = IllegalArgumentException.class)
-	public void startupDetectsMissingUserDetailsService() throws Exception {
+	public void startupDetectsMissingUserDetailsService() {
 		DigestAuthenticationFilter filter = new DigestAuthenticationFilter();
 		filter.setAuthenticationEntryPoint(new DigestAuthenticationEntryPoint());
 		filter.afterPropertiesSet();

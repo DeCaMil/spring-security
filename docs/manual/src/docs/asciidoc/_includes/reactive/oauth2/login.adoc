@@ -42,6 +42,9 @@ TIP: The default redirect URI template is `{baseUrl}/login/oauth2/code/{registra
 The *_registrationId_* is a unique identifier for the <<jc-oauth2login-client-registration,ClientRegistration>>.
 For our example, the `registrationId` is `google`.
 
+IMPORTANT: If the OAuth Client is running behind a proxy server, it is recommended to check <<appendix-proxy-server, Proxy Server Configuration>> to ensure the application is correctly configured.
+Also, see the supported <<oauth2Client-auth-code-redirect-uri, `URI` template variables>> for `redirect-uri`.
+
 [[webflux-oauth2-login-sample-config]]
 === Configure `application.yml`
 
@@ -89,7 +92,7 @@ At this point, the OAuth Client retrieves your email address and basic profile i
 == Using OpenID Provider Configuration
 
 For well known providers, Spring Security provides the necessary defaults for the OAuth Authorization Provider's configuration.
-If you are working with your own Authorization Provider that supports https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig[OpenID Provider Configuration], you may use the https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationResponse[OpenID Provider Configuration Response] the issuer-uri can be used to configure the application.
+If you are working with your own Authorization Provider that supports https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig[OpenID Provider Configuration] or https://tools.ietf.org/html/rfc8414#section-3[Authorization Server Metadata], the https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationResponse[OpenID Provider Configuration Response]'s `issuer-uri` can be used to configure the application.
 
 [source,yml]
 ----
@@ -106,7 +109,11 @@ spring:
             client-secret: 6cea952f-10d0-4d00-ac79-cc865820dc2c
 ----
 
-The `issuer-uri` instructs Spring Security to leverage the endpoint at `https://idp.example.com/auth/realms/demo/.well-known/openid-configuration` to discover the configuration.
+The `issuer-uri` instructs Spring Security to query in series the endpoints `https://idp.example.com/auth/realms/demo/.well-known/openid-configuration`, `https://idp.example.com/.well-known/openid-configuration/auth/realms/demo`, or `https://idp.example.com/.well-known/oauth-authorization-server/auth/realms/demo` to discover the configuration.
+
+[NOTE]
+Spring Security will query the endpoints one at a time, stopping at the first that gives a 200 response.
+
 The `client-id` and `client-secret` are linked to the provider because `keycloak` is used for both the provider and the registration.
 
 
@@ -120,7 +127,7 @@ A minimal OAuth2 Login configuration is shown below:
 @Bean
 ReactiveClientRegistrationRepository clientRegistrations() {
 	ClientRegistration clientRegistration = ClientRegistrations
-			.fromOidcIssuerLocation("https://idp.example.com/auth/realms/demo")
+			.fromIssuerLocation("https://idp.example.com/auth/realms/demo")
 			.clientId("spring-security")
 			.clientSecret("6cea952f-10d0-4d00-ac79-cc865820dc2c")
 			.build();
@@ -131,7 +138,7 @@ ReactiveClientRegistrationRepository clientRegistrations() {
 SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
 	http
 		// ...
-		.oauth2Login();
+		.oauth2Login(withDefaults());
 	return http.build();
 }
 ----
@@ -144,11 +151,13 @@ Additional configuration options can be seen below:
 SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
 	http
 		// ...
-		.oauth2Login()
-			.authenticationConverter(converter)
-			.authenticationManager(manager)
-			.authorizedClientRepository(authorizedClients)
-			.clientRegistrationRepository(clientRegistrations);
+		.oauth2Login(oauth2Login ->
+			oauth2Login
+				.authenticationConverter(converter)
+				.authenticationManager(manager)
+				.authorizedClientRepository(authorizedClients)
+				.clientRegistrationRepository(clientRegistrations)
+		);
 	return http.build();
 }
 ----

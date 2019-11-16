@@ -21,6 +21,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.codec.Hex;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.codec.Utf8;
+import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 import javax.servlet.http.HttpServletRequest;
@@ -102,7 +103,7 @@ public class TokenBasedRememberMeServices extends AbstractRememberMeServices {
 		long tokenExpiryTime;
 
 		try {
-			tokenExpiryTime = new Long(cookieTokens[1]).longValue();
+			tokenExpiryTime = new Long(cookieTokens[1]);
 		}
 		catch (NumberFormatException nfe) {
 			throw new InvalidCookieException(
@@ -122,6 +123,10 @@ public class TokenBasedRememberMeServices extends AbstractRememberMeServices {
 
 		UserDetails userDetails = getUserDetailsService().loadUserByUsername(
 				cookieTokens[0]);
+
+		Assert.notNull(userDetails, () -> "UserDetailsService " + getUserDetailsService()
+				+ " returned null for username " + cookieTokens[0] + ". "
+				+ "This is an interface contract violation");
 
 		// Check signature of token matches remaining details.
 		// Must do this after user lookup, as we need the DAO-derived password.

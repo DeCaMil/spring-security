@@ -18,7 +18,7 @@ package org.springframework.security.web.access;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyZeroInteractions;
@@ -44,7 +44,6 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationTrustResolverImpl;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.RememberMeAuthenticationToken;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -62,7 +61,7 @@ public class ExceptionTranslationFilterTests {
 
 	@After
 	@Before
-	public void clearContext() throws Exception {
+	public void clearContext() {
 		SecurityContextHolder.clearContext();
 	}
 
@@ -258,12 +257,12 @@ public class ExceptionTranslationFilterTests {
 	}
 
 	@Test(expected = IllegalArgumentException.class)
-	public void startupDetectsMissingAuthenticationEntryPoint() throws Exception {
+	public void startupDetectsMissingAuthenticationEntryPoint() {
 		new ExceptionTranslationFilter(null);
 	}
 
 	@Test(expected = IllegalArgumentException.class)
-	public void startupDetectsMissingRequestCache() throws Exception {
+	public void startupDetectsMissingRequestCache() {
 		new ExceptionTranslationFilter(mockEntryPoint, null);
 	}
 
@@ -306,7 +305,7 @@ public class ExceptionTranslationFilterTests {
 	}
 
 	@Test
-	public void doFilterWhenResponseCommittedThenRethrowsException() throws Exception {
+	public void doFilterWhenResponseCommittedThenRethrowsException() {
 		this.mockEntryPoint = mock(AuthenticationEntryPoint.class);
 		FilterChain chain = (request, response) -> {
 			HttpServletResponse httpResponse = (HttpServletResponse) response;
@@ -324,11 +323,5 @@ public class ExceptionTranslationFilterTests {
 		verifyZeroInteractions(mockEntryPoint);
 	}
 
-	private AuthenticationEntryPoint mockEntryPoint = new AuthenticationEntryPoint() {
-		public void commence(HttpServletRequest request, HttpServletResponse response,
-				AuthenticationException authException) throws IOException,
-				ServletException {
-			response.sendRedirect(request.getContextPath() + "/login.jsp");
-		}
-	};
+	private AuthenticationEntryPoint mockEntryPoint = (request, response, authException) -> response.sendRedirect(request.getContextPath() + "/login.jsp");
 }
